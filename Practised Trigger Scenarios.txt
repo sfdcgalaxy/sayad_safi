@@ -1,0 +1,267 @@
+1.Count number of contacts associate with Account and update Account of Count__c field.
+
+trigger contactTrigger on Contact (after insert, after update, after delete, after undelete) {
+    Set<Id> accountIds = new Set<Id>();
+    if(trigger.isAfter && (trigger.isInsert || trigger.isUndelete)) {
+        for(Contact con1:trigger.new) {
+            accountIds.add(con1.AccountId);
+        }
+    }
+    if(trigger.isAfter && trigger.isUpdate) {
+        for(Contact con2:trigger.new) {
+            if(con2.AccountId != trigger.oldMap.get(Con2.Id).AccountId) {
+                accountIds.add(con2.AccountId);
+                accountIds.add(trigger.oldmap.get(con2.Id).AccountId);
+            }      
+        }
+    }
+    if(trigger.isAfter && trigger.isDelete) {
+        for(Contact con3:trigger.old) {
+            accountIds.add(con3.AccountId);
+        }
+    }
+    List<Account> lsttoUpdate = new List<Account>();
+    if(!accountIds.isEmpty()) { 
+        List<Account> lstAcc = [Select Id, Count__c, (Select Id from Contacts) From Account Where Id IN:accountIds];
+        for(Account acc:lstAcc) {
+            Integer countContacts = acc.contacts.size();
+            acc.Count__c = countContacts;
+            lsttoUpdate.add(acc);
+        }
+    }
+    if(!lsttoUpdate.isEmpty()) {
+        update lsttoUpdate;
+    }
+    
+}
+
+
+OR
+
+public class CountContactHandler {
+    public static void CountContactHelper(List<contact> newcontact, List<contact> oldcontact){
+        set<id> accIds= new set<id>();
+        if(newcontact != null){
+            for(Contact c : newcontact){
+                if(c.AccountId!=null){
+                    accids.add(c.accountid);
+                }
+            }      
+        }
+         
+        if(oldcontact != null){
+            for(Contact c : oldcontact){
+                accids.add(c.accountid);
+            }
+        }
+         
+        List<Account> accList = [Select Id, Count__c, (Select id from Contacts) from Account where Id IN :accIds];
+         
+        if(accList!=null){
+            for(Account acc : accList){
+                acc.Count__c = acc.Contacts.size();
+            } 
+        }
+         
+        if(!accList.isEmpty()){
+            update accList;
+        }
+    } 
+}
+
+
+OR
+
+trigger ContactTrigger on Contact (after insert, after update, after delete, after undelete) {
+    //---> above handling all states which could see a contact added to or removed from an account
+    
+    //---> on delete we use Trigger.Old, all else, Trigger.new
+    List<Contact> contacts = Trigger.isDelete ? Trigger.old : Trigger.new;
+    
+    //---> the Set class rocks for finding the unique values in a list
+    Set<Id> acctIds = new Set<Id>();
+    
+    for (Contact c : contacts) {
+        //yes, you can have a contact without an account
+        if (c.AccountId != null) {
+            acctIds.add(c.AccountId);
+        } else if(c.AccountId != trigger.oldMap.get(c.Id).AccountId) {
+                   acctIds.add(trigger.oldMap.get(c.Id).AccountId);
+               }
+    }
+    
+    List<Account> acctsToRollup = new List<Account>();
+    
+    //****** Here is the Aggregate query...don't count in loops, let the DB do it for you*****
+    for (AggregateResult ar : [SELECT AccountId AcctId, Count(id) ContactCount 
+                               FROM Contact 
+                               WHERE AccountId in: acctIds 
+                               GROUP BY AccountId]){
+                                   Account a = new Account();
+                                   a.Id = (Id) ar.get('AcctId'); //---> handy trick for updates, set the id and update
+                                   a.Count__c = (Integer) ar.get('ContactCount');
+                                   acctsToRollup.add(a);
+                               }
+    
+    //----> probably you'll want to do a little more error handling than this...but this should work. 
+    update acctsToRollup;
+    
+}
+         
+
+
+2.When ever Opportunity "Stage" is modified to "Closed Won" then set "Close Date" as "Today Date" and "Type" as "New Customer".
+
+trigger opportunityTrigger on opportunity(before update) {
+   List<Account> lstUpdate = new List<Account>();
+   if(Trigger.isBefore && Trigger.isUpdate) {
+      for(Opportunity opp:trigger.new) {
+          if(opp.stageName == 'Closed Won') {
+              opp.closeDate = system.today();
+              opp.Type = 'New Customer';
+              lstUpdate.add(opp);
+           }
+        }
+     }
+     if(!lstUpdate.isEmpty()) {
+         update lstUpdate;
+     }
+ }
+
+
+3. /*write a trigger to avoid insertion of account i.e which will fires when will try to 
+     create account with the same email and existing account already having contacts to it.*/
+
+    trigger accountTrigger on Account(before isert) {
+        Set<String> setOfEmail = new Set<String>();
+        
+            for(Account acc : trigger.new) {
+                if(acc.Email__c != null) {
+                    setOfEmail.add(acc.Email__c);
+                 }
+             }
+
+             List<String> lstofDup = new List<String>();
+
+             if(!setOfEmail.isEmpty()) {
+                for(Account acc:[Select Id, Email__c, (Select Id From Contacts) From Account Where Email__c IN:setOfEmail]) {
+                    if(acc.Contacts.size() >0) {
+                        lstOfDup.add(acc.Email__c);
+                     }
+                 }
+                 for(Account acc: trigger.new) {
+                      if(lstofDup.contains(acc.Email__c)) {
+                         acc.addError('Record with the same email with related contacts already present');
+                      }
+                  }
+              }
+       }
+
+
+
+4. /*create a multipicklist field on account name "Destinations" add some countries name to it.
+      whenever a user inserts or update the account and if picklist field contains the value then insert its related contacts on picklist values.*/
+
+   trigger accountTrigger on Account(after insert, after update) {
+        List<String> lstOfString = new List<String>();
+        Map<Id, List<String>> mapTostorDest = new Map<Id, List<String>>();
+        if(trigger.isAfter && trigger.isInsert) {
+            for(Account acc:trigger.new) {
+                if(acc.Destinations__c != null) {
+                   lstOfString = acc.Destinations__c.split(';');
+                   mapTostorDest.put(acc.Id, lstOfString);
+                 }
+             }
+         }
+         if(trigger.isAfter && trigger.isUpdate) {
+            for(Account acc:trigger.new) {
+                if(acc.Destinations__c != trigger.oldMap.get(acc.Id).Destinations__c && acc.Destinations__c != null) {
+                   lstOfString = acc.Destinations__c.split(';');
+                   mapTostorDest.put(acc.Id, lstOfString);
+                 }
+              }
+          }
+         
+          List<Contact> lstOfContact = new List<Contact>();
+          if(!mapTostorDest.isEmpty()) {
+            for(Id accId: mapTostorDest.keyset()) {
+                for(String str : mapTostorDest.get(accId)) {
+                    Contact con = new Contact();
+                    con.FirstName = str;
+                    con.LastName = 'Destination';
+                    con.AccountId = accId;
+                    lstOfContact.add(con);
+                 }
+             }
+         }
+         if(!lstOfContact.isEmpty()) {
+           insert lstOfContact;
+         }
+    }
+
+
+
+5.Contact and Account both have a field 'Status' of picklist type :
+1.completed
+2.open
+3.In Progress
+Write a trigger to update account status field.
+If all the Contact has status-Completed then Account status as'Completed'.
+If all the Contact has status-Open then Account status as'Open'.
+If all the Contact has status-In_Progress then Account status as 'In_Progress'.
+If the Contact has Mixed status (Completed,Open,In_Progress) then account status as'In_Progress'.
+
+trigger contactTrigger on Contact(after update) {
+   
+   List<String> strOpen = new List<String>();
+   List<String> strInProgress = new List<String>();
+   List<String> strCompleted = new List<String>();
+
+   Set<Id> accountIds = new Set<id>();
+
+   if(Trigger.isAfter && Trigger.isUpdate) {
+      for(Contact con:trigger.new) {
+          if(con.AccountId != null) {
+             accountIds.add(con.AccountId);
+          }
+       }
+     }
+     List<Account> lstToUpdate = new List<Account>();
+     if(!accoutnIds.isEmpty()) {
+        List<Contact> lstCon = [SELECT Id, AccountId, Status__c FROM Contact WHERE AccountId IN:accountIds];
+        if(lstCon.size()>0) {
+           for(Contact c:lstCon) {
+               if(con.Status__c == 'Open') {
+                  strOpen.add(con.Status__c);
+               } else if(con.Status__c == 'InProgress') {
+                          strInprogress.add(con.Status__c);
+                      } else if(con.Status__c == 'Completed') {
+                                strCompleted.add(con.Status__c);
+                             }
+             }
+           }
+          
+          List<Account> lstAcc = [SELECT Id, Status__c, (SELECT Id, Status__c FROM Contacts) FROM Account WHERE Id IN:accountIds];
+          if(lstAcc.size()>0) {
+             for(Account acc:lstAcc) {
+                 if(acc.Contacts.size() == strOpen.Size()) {
+                     acc.Status__c = 'Open';
+                     lstToUpdate.add(acc);
+                 } else if(acc.Contacts.size() == strInProgress.Size()) {
+                            acc.Status__c = 'InProgress';
+                            lstToUpdate.add(acc);
+                        } else if(acc.Contacts.size() == strCompleted.size()) {
+                                  acc.Status__c = 'Completed';
+                                  lstToUpdate.add(acc);
+                                }
+               }
+             }
+           }
+           if(!lstToUpdate.isEmpty()) {
+               update lstToUpdate;
+            }
+      } 
+
+     
+              
+
