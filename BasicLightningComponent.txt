@@ -1,0 +1,63 @@
+
+==>Build a basic lightning component that can query a list of 10 most recently created accounts and display it using a lightning app.
+
+//Apex class for to retriving account records
+public with sharing class AccountRecordClass {
+    @AuraEnabled(cacheable=true)
+    public static List<Account> getAccountlist() {
+        return [SELECT Id, Name, Type, Email__c, CreatedDate FROM Account ORDER By CreatedDate DESC LIMIT 10];
+    }
+}
+
+
+//LWC.html
+
+<template>
+    
+    <lightning-card>
+        <lightning-datatable 
+                key-field="Id"
+                data={accounts}
+                columns={columns}
+        >
+        </lightning-datatable>
+    </lightning-card>
+    
+</template>
+
+//LWC.js
+import { LightningElement, wire} from 'lwc';
+import lstAccounts from '@salesforce/apex/AccountRecordClass.getAccountlist';
+
+const columns = [
+    {label : 'Account Name', fieldName : 'Name'},
+    {label : 'Type', fieldName : 'Type'},
+    {label : 'Email', fieldName : 'Email__c'},
+    {label : 'Created Date', fieldName : 'CreatedDate'}
+]
+
+export default class AccountListLwc extends LightningElement {
+    columns = columns;
+    accounts;
+    error;
+    @wire(lstAccounts)wiredAccounts({data,error}){
+        if(data) {
+            this.accounts = data;
+        } else {
+            this.error = error;
+        }
+    }
+}
+
+//LWC.js-meta-xml
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>58.0</apiVersion>
+    <isExposed>true</isExposed>
+    <targets>
+        <target>lightning__AppPage</target>
+        <target>lightning__HomePage</target>
+        <target>lightning__RecordPage</target>
+    </targets>
+</LightningComponentBundle>
+		

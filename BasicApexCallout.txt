@@ -1,0 +1,24 @@
+
+==>Make a basic http callout and print the result using system.debug
+
+public class AnimalForm {
+
+    public static HttpResponse getAnimals() {
+		Http http = new Http();
+		HttpRequest request = new HttpRequest();
+		request.setEndPoint('https://th-apex-http-callout.herokuapp.com/animals');
+		request.setMethod('GET');
+
+		HttpResponse response = http.send(request);
+		system.debug(response.getStatusCode());
+
+        if(response.getStatuscode() == 200) {
+			Map<String,Object> result = (Map<String,Object>) JSON.deserializeUntyped(response.getBody());	
+			system.debug(result);
+		}
+
+		return response;
+		
+	}
+
+}
